@@ -1,8 +1,10 @@
 #!/bin/bash
 
 if [[ $EUID -ne 0 ]]; then
-	echo "You must run this script as root or sudo!" 2>&1
-	exit 1
+	echo "You must run this script as root or sudo!"
+	echo "Elevating Privilege..."
+	sudo "$0" "$@"
+    exit $?
 fi
 
 # System Update and Upgrade
