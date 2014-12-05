@@ -7,21 +7,6 @@ if [[ $EUID -ne 0 ]]; then
     exit $?
 fi
 
-# System Update and Upgrade
-apt-get update
-apt-get upgrade
-
-apt-get install curl wget vim openssl
-
-# Change UFW Rules
-ufw default deny incoming
-
-ufw logging medium
-
-ufw allow ssh
-
-ufw enable
-
 # Create CA Directories
 mkdir /etc/ssl/CA
 mkdir /etc/ssl/newcerts
@@ -52,4 +37,4 @@ chmod 444 /etc/ssl/certs/cacert.pem
 ## TODO: To be completed in the future
 
 # Provisioning Complete
-echo Provisioning Complete! CA certificates have been generated.
+echo CA certificates have been generated!

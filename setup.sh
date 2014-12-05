@@ -6,9 +6,10 @@ echo
 echo
 
 if [[ $EUID -ne 0 ]]; then
-	echo "You must run this script as root or sudo!" 2>&1
-	echo "Try: sudo ./setup.sh" 2>&1
-	exit 1
+	echo "You must run this script as root or sudo!"
+	echo "Elevating Privilege..."
+	sudo "$0" "$@"
+    exit $?
 fi
 
 # Configure This System
@@ -21,28 +22,21 @@ apt-get install curl wget openssl
 
 # Change UFW Rules
 ufw default deny incoming
+ufw default allow routed # Docker
 
 ufw logging medium
 
 ufw allow ssh
+ufw allow
 
 ufw enable
 
+###########################
 # Configure Certificate Authority
-echo "Configuring the Certificate Authority"
-echo "Please enter the reachable IP address for the will-be Certificate Authority node: "
-read CERTIFICATE_AUTHORITY_IP_ADDRESS
 
-echo "Please enter the port for the node [22]: "
-read -i 22 -e CERTIFICATE_AUTHORITY_PORT
+scripts/certauthority_provision.sh
 
-echo "Please enter the user to use to connect to the node [root]: "
-read -i root -e CERTIFICATE_AUTHORITY_USER
-
-echo "Launching Certificate Authority Provision Script. The script will be run on the node itself."
-echo "Launching SSH..."
-ssh $CERTIFICATE_AUTHORITY_USER@$CERTIFICATE_AUTHORITY_IP_ADDRESS -p $CERTIFICATE_AUTHORITY_PORT 'bash -s' < scripts/certauthority_provision_remote.sh
-
+###########################
 # Configure Shipyard Controller
 echo "Configuring the Shipyard Controller"
 echo "Please enter the reachable IP address for the will-be Shipyard Controller node: "
@@ -56,8 +50,14 @@ read -i root -e SHIPYARD_CONTROLLER_USER
 
 echo "Launching Shipyard Controller Provision Script. The script will be run on the node itself."
 echo "Launching SSH..."
-ssh $SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS -p $SHIPYARD_CONTROLLER_PORT 'bash -s' < scripts/shipyard_provision_remote.sh
 
+# Start Multiplexed Connection - Timeout: Indefinite
+ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-control-$SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS:$SHIPYARD_CONTROLLER_PORT -o ControlPersist=yes $SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS -p $SHIPYARD_CONTROLLER_PORT
+
+# Run Provision Script
+ssh -o ControlPath=/tmp/ssh-control-$SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS:$SHIPYARD_CONTROLLER_PORT $SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS -p $SHIPYARD_CONTROLLER_PORT 'bash -s' < scripts/shipyard_provision_remote.sh
+
+###############################
 # Install Docker and Shipyard CLI
 curl -sSL https://get.docker.com/ubuntu/ | sh
 
@@ -75,3 +75,8 @@ docker run shipyard-cli shipyard login
 
 # Delete Shipyard CLI Container
 docker rm shipyard-cli
+
+## Stop Persistent SSH Connections
+
+# Stop Multiplexed Connection - Shipyard Controller
+ssh -O stop -o ControlPath=/tmp/ssh-control-$SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS:$SHIPYARD_CONTROLLER_PORT $SHIPYARD_CONTROLLER_USER@$SHIPYARD_CONTROLLER_IP_ADDRESS -p $SHIPYARD_CONTROLLER_PORT
