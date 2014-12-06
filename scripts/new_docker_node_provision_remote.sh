@@ -42,6 +42,6 @@ service docker stop
 sed -i "s/#DOCKER_OPTS=\"--dns 8.8.8.8 --dns 8.8.4.4 \"/DOCKER_OPTS=\"--dns 8.8.8.8 --dns 8.8.4.4 -H tcp://$DOCKER_DAEMON_PUBLIC_IP:2375 --tlsverify --tlscacert=/etc/ssl/certs/dockercluster-ca.pem --tlscert=/etc/ssl/certs/dockerd-cert.pem --tlskey=/etc/ssl/private/dockerd-key.pem\"/" /etc/default/docker
 
 # Generate Private Docker Certificate
-openssl genrsa -aes256 -out /etc/ssl/private/dockerd-key.pem 4096
+openssl genrsa -nodes -out /etc/ssl/private/dockerd-key.pem 4096
 
 openssl req -subj "/CN=$DOCKER_DAEMON_HOSTNAME" -new -key /etc/ssl/private/dockerd-key.pem -out /tmp/dockerd.csr

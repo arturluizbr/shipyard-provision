@@ -31,6 +31,14 @@ ufw allow
 
 ufw enable
 
+# Make Necessary Directories
+mkdir /opt/shipyard-provision
+mkdir /opt/shipyard-provision/docker-csr
+mkdir /opt/shipyard-provision/docker-certs
+mkdir /opt/shipyard-provision/shipyard-certs
+mkdir /opt/shipyard-provision/shipyard-certs/certs
+mkdir /opt/shipyard-provision/shipyard-certs/private
+
 ###########################
 # Configure Certificate Authority
 

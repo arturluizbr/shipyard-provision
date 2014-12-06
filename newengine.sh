@@ -32,11 +32,41 @@ ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCK
 # Run Provision Script
 ssh -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT "bash -s" -- < scripts/new_docker_node_provision_remote.sh $DOCKERNODE_HOST
 
-scp -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT -P $DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST:/opt/dockerd.csr /opt/shipyard-provision/docker-csr/$DOCKERNODE_HOST.csr
+# Copy CSR from remote to local
+scp -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT -P $DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST:/tmp/dockerd.csr /opt/shipyard-provision/docker-csr/$DOCKERNODE_HOST.csr
 
-openssl x509 -req -days 3650 -in /opt/shipyard-provision/docker-csr/$DOCKERNODE_HOST.csr -CA /etc/ssl/certs/cacert.pem -CAkey /etc/ssl/private/cakey.pem -out /opt/shipyard-provision/docker-certs/$DOCKERNODE_HOST-cert.pem
+# Sign CSR
+openssl x509 -req -days 3650 -in /opt/shipyard-provision/docker-csr/$DOCKERNODE_HOST.csr -CA /etc/ssl/certs/cacert.pem -CAkey /etc/ssl/private/cakey.pem -out /opt/shipyard-provision/docker-certs/certs/$DOCKERNODE_HOST-cert.pem
 
-scp -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT -P $DOCKERNODE_PORT /opt/shipyard-provision/docker-certs/$DOCKERNODE_HOST-cert.pem $DOCKERNODE_USER@$DOCKERNODE_HOST:/etc/ssl/certs/dockerd-cert.pem
+# Copy CSR from local to remote
+scp -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT -P $DOCKERNODE_PORT /opt/shipyard-provision/docker-certs/certs/$DOCKERNODE_HOST-cert.pem $DOCKERNODE_USER@$DOCKERNODE_HOST:/etc/ssl/certs/dockerd-cert.pem
 
 # Stop Multiplexed Connection
 ssh -O stop -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT
+
+# Add Engine to Shipyard
+docker rm shipyard-cli
+docker run shipyard-cli shipyard login # TODO: Check if properly logged in
+
+# Copy Certificate Files
+docker run shipyard-cli /bin/bash -c 'cat > /opt/cacert.pem' < /etc/ssl/certs/cacert.pem
+
+# Create Docker Client Auth Cert Key for Shipyard
+openssl genrsa -nodes -out /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem 4096
+
+# Create Docker Client Auth Cert CSR for Shipyard
+openssl req -subj '/CN=client' -new -key /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem -out /opt/shipyard-provision/shipyard-certs/shipyard-client.csr
+
+# Add ClientAuth to the KeyUsage
+echo extendedKeyUsage = clientAuth > /opt/shipyard-provision/shipyard-certs/extfile.cnf
+
+# Sign the CSR using the CA
+openssl x509 -req -days 3650 -in /opt/shipyard-provision/shipyard-certs/shipyard-client.csr -CA /etc/ssl/certs/cacert.pem -CAkey /etc/ssl/private/cakey.pem -out /opt/shipyard-provision/shipyard-certs/certs/shipyard-cert.pem -extfile /opt/shipyard-provision/shipyard-certs/extfile.cnf
+
+# Copy Certificate Files
+docker run shipyard-cli /bin/bash -c 'cat > /opt/shipyard-cert.pem' < /opt/shipyard-provision/shipyard-certs/certs/shipyard-cert.pem
+
+docker run shipyard-cli /bin/bash -c 'cat > /opt/shipyard-key.pem' < /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem
+
+# Add the Engine to Shipyard
+docker run shipyard-cli add-engine --addr https://$DOCKERNODE_HOST:2376 --ca-cert
