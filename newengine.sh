@@ -30,6 +30,11 @@ echo "Launching SSH..."
 ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT -o ControlPersist=yes $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT
 
 # Run Provision Script
+
+# Get Node Resource Constraints for Shipyard Engine Scheduling
+DOCKERNODE_CPUS = $(ssh -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT nproc)
+DOCKERNODE_RAM = $(ssh -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT 'echo "scale = 0; $(grep -oP "(?<=MemTotal:         )\d+?(?=\skB)" /proc/meminfo) / 1024" | bc')
+
 ssh -o ControlPath=/tmp/ssh-control-$DOCKERNODE_USER@$DOCKERNODE_HOST:$DOCKERNODE_PORT $DOCKERNODE_USER@$DOCKERNODE_HOST -p $DOCKERNODE_PORT "bash -s" -- < scripts/new_docker_node_provision_remote.sh $DOCKERNODE_HOST
 
 # Copy CSR from remote to local
@@ -49,24 +54,12 @@ docker rm shipyard-cli
 docker run shipyard-cli shipyard login # TODO: Check if properly logged in
 
 # Copy Certificate Files
-docker run shipyard-cli /bin/bash -c 'cat > /opt/cacert.pem' < /etc/ssl/certs/cacert.pem
-
-# Create Docker Client Auth Cert Key for Shipyard
-openssl genrsa -nodes -out /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem 4096
-
-# Create Docker Client Auth Cert CSR for Shipyard
-openssl req -subj '/CN=client' -new -key /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem -out /opt/shipyard-provision/shipyard-certs/shipyard-client.csr
-
-# Add ClientAuth to the KeyUsage
-echo extendedKeyUsage = clientAuth > /opt/shipyard-provision/shipyard-certs/extfile.cnf
-
-# Sign the CSR using the CA
-openssl x509 -req -days 3650 -in /opt/shipyard-provision/shipyard-certs/shipyard-client.csr -CA /etc/ssl/certs/cacert.pem -CAkey /etc/ssl/private/cakey.pem -out /opt/shipyard-provision/shipyard-certs/certs/shipyard-cert.pem -extfile /opt/shipyard-provision/shipyard-certs/extfile.cnf
+docker run shipyard-cli /bin/bash -c 'cat > /etc/ssl/certs/shipyard-cacert.pem' < /etc/ssl/certs/cacert.pem
 
 # Copy Certificate Files
-docker run shipyard-cli /bin/bash -c 'cat > /opt/shipyard-cert.pem' < /opt/shipyard-provision/shipyard-certs/certs/shipyard-cert.pem
+docker run shipyard-cli /bin/bash -c 'cat > /etc/ssl/certs/shipyard-cert.pem' < /opt/shipyard-provision/shipyard-certs/certs/shipyard-cert.pem
 
-docker run shipyard-cli /bin/bash -c 'cat > /opt/shipyard-key.pem' < /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem
+docker run shipyard-cli /bin/bash -c 'cat > /etc/ssl/private/shipyard-key.pem' < /opt/shipyard-provision/shipyard-certs/private/shipyard-key.pem
 
 # Add the Engine to Shipyard
-docker run shipyard-cli add-engine --addr https://$DOCKERNODE_HOST:2376 --ca-cert
+docker run shipyard-cli add-engine --addr https://$DOCKERNODE_HOST:2376 --ca-cert /etc/ssl/certs/shipyard-cacert.pem --ssl-cert /etc/ssl/certs/shipyard-cert.pem --ssl-key /etc/ssl/private/shipyard-key.pem -cpus $DOCKERNODE_CPUS --memory $DOCKERNODE_RAM
